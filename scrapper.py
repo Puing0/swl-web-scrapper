@@ -1,63 +1,90 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
 import requests
 import io
 from PIL import Image
 import time
-
-PATH = "C:\\Users\\dell\\OneDrive\\Desktop\\PFE MASTER\\chromedriver.exe"
-
-wd = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 def get_images_url(wd, delay):
-	def scroll_down(wd):
-		wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-		time.sleep(delay)
-	url = "https://www.spaceweatherlive.com/fr/archives/2023/05/01/dayobs.html"
-	wd.get(url)
+    def scroll_down(wd):
+        wd.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(delay)
 
-	image_urls = set()
-	skips = 0
+    scroll_down(wd)
 
-	scroll_down(wd)
-	images = wd.find_elements(By.CSS_SELECTOR, '[alt="HMIIF"]')
-	classes = wd.find_elements(By.CLASS_NAME, 'region_mag')
-	for image in images:
-		if image.get_attribute('src') :
-			image_urls.add(image.get_attribute('src'))
-			print(f"Found {len(image_urls)}")
+    images = wd.find_elements(By.CSS_SELECTOR, '[alt="HMIIF"]')
+    labels = wd.find_elements(By.CLASS_NAME, 'region_mag')
 
-	return image_urls
+    image_urls = []
+    label_classes = []
 
-
+    for image in images:
+        if image.get_attribute('src'):
+            image_urls.append(image.get_attribute('src'))
+    
+    for label in labels:
+        class_name = label.get_attribute('class')
+        label_classes.append(class_name[11:])
+    
+    return image_urls, label_classes
 
 def download_image(download_path, url, file_name):
-	try:
-		agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36\
-		(KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
-		image_content = requests.get(url, headers={'User-Agent': agent})
-		image_content.raise_for_status()
-		# image = Image.open(io.BytesIO(image_content.content))
-		
-		file_path = download_path + file_name
+    try:
+        agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'
+        headers = {'User-Agent': agent}
 
-		with open(file_path, "wb") as f:
-			print("im here")
-			f.write(image_content.content)
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
 
-		print("Success")
-	except Exception as e:
-		print('FAILED -', e)
+        file_path = download_path + file_name
 
-urls = get_images_url(wd, 2)
-print(urls)
+        with open(file_path, "wb") as file:
+            file.write(response.content)
 
-for i, url in enumerate(urls):
-	download_image("imgs/", url, str(i) + ".jpg")
+        print("Image downloaded successfully:", file_path)
+    except Exception as e:
+        print('FAILED -', e)
 
+def navigate_to_next_page(wd):
+    anchor_point = wd.find_elements(By.XPATH, "//a[.//span[text()='Jour prochain']]")[0]
+    wd.execute_script("arguments[0].click();", anchor_point) 
+    # anchor_point.click()
+
+# Set up the WebDriver
+wd = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+
+# Open the initial URL
+url = "https://www.spaceweatherlive.com/fr/archives/2023/05/01/dayobs.html"
+wd.get(url)
+
+# Variables for image count and delay
+j = 0
+delay = 2
+
+# Main loop to navigate, extract image URLs, and download images
+while j < 3000:
+    try:
+        image_urls, labels = get_images_url(wd, delay)
+
+        for i, url in enumerate(image_urls):
+            label = labels[i]
+
+            if label == 'A':
+                download_image("imgs/alpha/", url, str(j) + ".jpg")
+            elif label == 'B':
+                download_image("imgs/beta/", url, str(j) + ".jpg")
+            else:
+                download_image("imgs/betax/", url, str(j) + ".jpg")
+            
+            j += 1
+
+        navigate_to_next_page(wd)
+        time.sleep(10)
+    except Exception as e:
+        print('Error:', e)
+        break
+
+# Quit the WebDriver
 wd.quit()
